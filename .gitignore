@@ -1,0 +1,7 @@
+/build*/
+/results/
+*.ncu-rep
+
+__pycache__/
+*.pyc
+.venv/
