@@ -154,7 +154,7 @@ def profile_one(ncu, executable, impl, shape, directory, *, warmup, device, seed
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--shapes", nargs="+", type=parse_shape, default=[(4096, 4096, 4096)])
+    parser.add_argument("--shapes", nargs="+", type=parse_shape, default=[(4096, 8192, 4096)])
     parser.add_argument("--impls", nargs="+", help="default: every entry from gemm_profile --list")
     parser.add_argument("--build-dir", type=Path, default=Path(os.environ.get("GEMM_BUILD_DIR", ROOT / "build")))
     parser.add_argument("--arch", default=os.environ.get("CUDA_ARCHITECTURES", "80"))
@@ -164,7 +164,7 @@ def main(argv=None):
     parser.add_argument("--set", dest="section_set", default="full", help="NCU section set (default: full)")
     parser.add_argument("--cache-control", choices=("all", "none"), default="all")
     parser.add_argument("--clock-control", choices=("base", "none"), default="base")
-    parser.add_argument("--warmup", type=int, default=10)
+    parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output", type=Path, help="new output directory; existing directories are rejected")

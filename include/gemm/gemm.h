@@ -50,6 +50,7 @@ void gemm_thread_tile_4x4(const GemmArgs& args);
 void gemm_thread_tile_4x8(const GemmArgs& args);
 void gemm_thread_tile_8x8(const GemmArgs& args);
 void gemm_thread_tile_8x8_warp4x8(const GemmArgs& args);
+void gemm_thread_tile_8x16(const GemmArgs& args);
 void gemm_warp_tile(const GemmArgs& args);
 void gemm_prefetchSmem(const GemmArgs& args);
 void gemm_prefetchSmem_contiguous8x8(const GemmArgs& args);

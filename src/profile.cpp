@@ -10,8 +10,8 @@ int main(int argc, char** argv) {
   bool profiling = false;
   try {
     std::string impl;
-    Shape shape{4096, 4096, 4096};
-    int warmup = 10, device = 0, seed = 0;
+    Shape shape{4096, 8192, 4096};
+    int warmup = 2, device = 0, seed = 0;
     bool validate_only = false;
     for (int i = 1; i < argc; ++i) {
       const std::string arg = argv[i];
@@ -20,8 +20,9 @@ int main(int argc, char** argv) {
         return 0;
       }
       if (arg == "--help") {
-        std::cout << "gemm_profile --impl NAME [--shape M,N,K] [--warmup 10] "
+        std::cout << "gemm_profile --impl NAME [--shape M,N,K] [--warmup 2] "
                      "[--device 0] [--seed 0] [--validate-only]\n"
+                     "Default shape: 4096,8192,4096 (M,N,K).\n"
                      "Use ncu --profile-from-start off to collect only the selected call.\n";
         return 0;
       }

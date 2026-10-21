@@ -69,14 +69,15 @@ class TestPlotResults(unittest.TestCase):
         path = self.load("layouts.csv", [
             measurement("thread_tile_8x8", 2),
             measurement("thread_tile_8x8_warp4x8", 1),
+            measurement("thread_tile_8x16", 0.75),
             measurement("cublas", 0.5),
         ])
         rows, skipped = plot.read_results([path])
         summary, _ = plot.summarize_group(rows)
         self.assertFalse(skipped)
         self.assertEqual([r["impl"] for r in summary], [
-            "thread_tile_8x8", "thread_tile_8x8_warp4x8", "cublas"])
-        self.assertEqual([r["median_ms"] for r in summary], [2, 1, 0.5])
+            "thread_tile_8x8", "thread_tile_8x8_warp4x8", "thread_tile_8x16", "cublas"])
+        self.assertEqual([r["median_ms"] for r in summary], [2, 1, 0.75, 0.5])
         self.assertEqual(summary[1]["speedup_over_cublas"], 0.5)
 
     def test_invalid_and_check_only_rows_are_excluded(self):

@@ -8,7 +8,7 @@ constexpr int BM = 128;
 constexpr int BN = 128;
 constexpr int BK = 8;
 
-// Row-major thread order for the smaller contiguous thread tiles.
+// Row-major thread order for contiguous thread tiles.
 template<int TM, int TN>
 struct ContiguousThreadTileLayout {
   __device__ __forceinline__ static int row(int tid, int element) {
@@ -26,7 +26,7 @@ template<int TM, int TN, class Layout = ContiguousThreadTileLayout<TM, TN>>
 // The 4x4 variant launches 1024 threads: on SM80 its register budget is
 // at most 64 registers/thread (65536 registers/block). Without launch bounds,
 // ptxas can optimize for fewer threads and produce an unlaunchable kernel.
-// Bound each specialization independently: 1024 / 512 / 256 threads.
+// Bound each specialization independently: 1024 / 512 / 256 / 128 threads.
 __global__ __launch_bounds__((BM / TM) * (BN / TN), 1)
 void gemm_thread_tile_kernel(
     const float* __restrict__ A,

@@ -93,6 +93,20 @@ class TestNcuProfile(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertEqual(rows, [])
 
+    def test_default_capture_uses_largest_benchmark_shape_and_short_warmup(self):
+        build = self.root / "build"
+        build.mkdir()
+        (build / "gemm_profile").touch()
+        with mock.patch.object(profile.shutil, "which", return_value="ncu"), \
+             mock.patch.object(profile, "run_logged", self.fake_run):
+            self.assertEqual(profile.main(["--skip-build", "--build-dir", str(build),
+                                           "--output", str(self.root / "reports")]), 0)
+        captures = [c for c in self.commands if "--export" in c]
+        self.assertEqual(len(captures), 3)
+        for command in captures:
+            self.assertEqual(command[command.index("--shape") + 1], "4096,8192,4096")
+            self.assertEqual(command[command.index("--warmup") + 1], "2")
+
     @unittest.skipUnless(os.name == "posix", "POSIX directory permissions")
     def test_default_report_directory_is_readable_from_host_with_normal_umask(self):
         build = self.root / "build"

@@ -21,6 +21,7 @@ IMPLEMENTATIONS = (
     ("thread_tile_4x8", "4  Thread tile 4x8"),
     ("thread_tile_8x8", "4  Thread tile 8x8"),
     ("thread_tile_8x8_warp4x8", "4  Thread tile 8x8 (warp 4x8)"),
+    ("thread_tile_8x16", "4  Thread tile 8x16"),
     ("warp_tile", "5  Warp tile / four subtiles"),
     ("prefetch_smem", "6  Shared-memory double buffer"),
     ("prefetch_smem_contiguous8x8", "6  Smem buffer / 8x8, warp 4x8"),

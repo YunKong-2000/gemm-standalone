@@ -11,6 +11,7 @@ const std::vector<Kernel>& gemm_kernels() {
     {"thread_tile_4x8", 4, 128, 128, 8, gemm_thread_tile_4x8},
     {"thread_tile_8x8", 4, 128, 128, 8, gemm_thread_tile_8x8},
     {"thread_tile_8x8_warp4x8", 4, 128, 128, 8, gemm_thread_tile_8x8_warp4x8},
+    {"thread_tile_8x16", 4, 128, 128, 8, gemm_thread_tile_8x16},
     {"warp_tile", 5, 128, 128, 8, gemm_warp_tile},
     {"prefetch_smem", 6, 128, 128, 8, gemm_prefetchSmem},
     {"prefetch_reg", 7, 128, 128, 8, gemm_prefetchReg},

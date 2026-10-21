@@ -10,16 +10,16 @@
 namespace {
 struct Options {
   std::vector<Shape> shapes = default_shapes();
-  int warmup = 10, repeat = 50, batch = 10, device = 0, seed = 0;
+  int warmup = 2, repeat = 5, batch = 1, device = 0, seed = 0;
   bool graph = true, check_only = false;
   std::string impl = "all", output;
 };
 
 void usage() {
   std::cout << "gemm_bench [--shapes M,N,K ...] [--impl NAME|all]\n"
-            << "  --warmup 10 --repeat 50 --batch 10 --timing graph|event\n"
+            << "  --warmup 2 --repeat 5 --batch 1 --timing graph|event\n"
             << "  --device 0 --seed 0 --output results.csv --check-only\n"
-            << "Defaults: 7 shapes x " << gemm_kernels().size()
+            << "Defaults: " << default_shapes().size() << " shapes x " << gemm_kernels().size()
             << " implementations; A column-major, B/C row-major.\n"
             << "Rates/speedups use median GPU ms; Split-K zeroing is included.\n";
 }
