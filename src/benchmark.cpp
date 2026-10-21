@@ -19,7 +19,6 @@ void usage() {
   std::cout << "gemm_bench [--shapes M,N,K ...] [--impl NAME|all]\n"
             << "  --warmup 10 --repeat 50 --batch 10 --timing graph|event\n"
             << "  --device 0 --seed 0 --output results.csv --check-only\n"
-            << "Continuous prefetch/Split-K variants also run the other continuous layout and subtile baseline.\n"
             << "Defaults: 7 shapes x " << gemm_kernels().size()
             << " implementations; A column-major, B/C row-major.\n"
             << "Rates/speedups use median GPU ms; Split-K zeroing is included.\n";

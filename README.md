@@ -46,7 +46,7 @@ ctest --test-dir build --output-on-failure
 | 1024 | 4096 | 4096 |
 | 4096 | 4096 | 4096 |
 
-每种规模运行下面全部 20 个实现，共 **140 个组合**。
+每种规模运行下面全部 14 个实现，共 **98 个组合**。
 
 | 阶段 | impl | block tile BM×BN×BK | 每线程输出 |
 | --- | --- | --- | --- |
@@ -61,23 +61,15 @@ ctest --test-dir build --output-on-failure
 | 4 | `thread_tile_8x8_warp4x8` | 128×128×8 | 连续 8×8，warp 内线程按 4×8 排列 |
 | 5 | `warp_tile` | 128×128×8 | 四个 4×4 子块 |
 | 6 | `prefetch_smem` | 128×128×8 | smem 双缓冲 |
-| 6 | `prefetch_smem_contiguous8x8` | 128×128×8 | smem 双缓冲，连续 8×8 |
-| 6 | `prefetch_smem_contiguous8x8_warp2x16` | 128×128×8 | 连续 8×8，warp 覆盖 16×128 |
 | 7 | `prefetch_reg` | 128×128×8 | smem + register 双缓冲 |
-| 7 | `prefetch_reg_contiguous8x8` | 128×128×8 | smem + register 双缓冲，连续 8×8 |
-| 7 | `prefetch_reg_contiguous8x8_warp2x16` | 128×128×8 | 连续 8×8，warp 覆盖 16×128 |
 | 8 | `split_k` | 128×128×8 | smem + register 双缓冲，两路 K，atomicAdd |
-| 8 | `split_k_contiguous8x8` | 128×128×8 | 两级双缓冲，两路 Split-K，连续 8×8 |
-| 8 | `split_k_contiguous8x8_warp2x16` | 128×128×8 | 两级双缓冲，两路 Split-K，warp 覆盖 16×128 |
 | 9 | `cublas` | 库选择 | 严格 FP32 |
 
 第三阶段严格保持一线程一个 C 元素，所以最大的 block tile 是 32×32（1024 个线程）。第四阶段才扩展 block tile 并引入连续 thread tile。第五阶段沿用后面三个 kernel 的 warp/lane/subtile 映射。
 
 `thread_tile_8x8_warp4x8` 与原版连续 `thread_tile_8x8` 共用计算、搬运、同步和写回代码，仅改变线程输出坐标映射。原版每个 warp 的线程按 2×16 排列，覆盖 16×128；新版按 4×8 排列，覆盖 32×64，block 内的 8 个 warp 按 4×2 排列。两版均为 256 线程、8 KiB shared memory，每线程 64 个累加器，使用相同 launch bounds；最终寄存器数和性能需实测。全量 benchmark、CUDA 回归测试及绘图均包含新版。
 
-第 6～8 阶段每个 `.cu` 文件通过编译期模板实例化三种布局：原 subtile（warp 内 8×4 线程，64×32 C tile）、`*_contiguous8x8`（warp 内 4×8 线程，32×64 C tile）和 `*_contiguous8x8_warp2x16`（warp 内 2×16 线程，16×128 C tile）。两种连续版本均为每线程连续 8×8。三版共享该阶段的 global→shared 搬运、计算循环、同步、缓冲数量和归约流程，只改变 A/B fragment 与 C 的坐标映射；没有运行时布局分支。三版均为 256 线程、16 KiB shared memory；Split-K 均为两路、每次调用都清零 C。
-
-新增 2×16 版本使用 `rowBase=(tid/16)*8`、`colBase=(tid%16)*8`，与同步加载的 `thread_tile_8x8` 相同。block 的 8 个 warp 沿 M 方向排列，每个 warp 的 32 个线程按行优先顺序覆盖两行 thread tile，形成连续的 16×128 输出区域。比较 2×16 与 4×8 连续版可观察 warp 形状的影响；比较任一连续版与原 subtile 版则同时包含 warp 形状和 subtile 连续性的变化。
+第 6～8 阶段仅测试原 subtile 布局的 `prefetch_smem`、`prefetch_reg` 和 `split_k`。六个连续 8×8 变体已从实现注册表移除，不再参与 benchmark、CUDA 正确性回归或 NCU 采集，也不再接受对应的 `--impl` 名称。连续变体的 kernel 源码和直接调用接口仍保留。第 4 阶段的两个连续 8×8 thread tile 实现继续测试。
 
 三个 Split-K 变体现在同时使用 shared-memory 和 register 双缓冲。每个 BK=8 tile 先将 k=0 读入 `rA[0][8]` / `rB[0][8]`，循环中先加载 k+1 到另一组寄存器，再计算当前 k，最后单独计算 k=7。各 K 分片的第一个 tile 和最后一个 tile 均使用相同流程；两路划分、atomicAdd 和同 stream 清零不变。该版本从 `prefetch_reg` 的计算流水继续添加 Split-K；旧 CSV 中的 Split-K 没有 register 双缓冲，比较前后版本时请分别保存报告。
 
@@ -132,13 +124,6 @@ int main() {
 # 单独测试一个变体，仍自动加入 cuBLAS 对照
 ./build/gemm_bench --impl thread_tile_4x8 --shapes 128,256,24
 ./build/gemm_bench --impl thread_tile_8x8_warp4x8 --shapes 1024,1024,1024
-# 选择任一连续版本，自动测试该阶段三种布局及 cuBLAS，使用相同输入
-./build/gemm_bench --impl prefetch_smem_contiguous8x8 --shapes 1024,1024,1024
-./build/gemm_bench --impl prefetch_reg_contiguous8x8 --shapes 1024,1024,1024
-./build/gemm_bench --impl split_k_contiguous8x8 --shapes 1024,1024,1024
-./build/gemm_bench --impl prefetch_smem_contiguous8x8_warp2x16 --shapes 1024,1024,1024
-./build/gemm_bench --impl prefetch_reg_contiguous8x8_warp2x16 --shapes 1024,1024,1024
-./build/gemm_bench --impl split_k_contiguous8x8_warp2x16 --shapes 1024,1024,1024
 # 不使用 CUDA Graph
 ./build/gemm_bench --timing event --shapes 1024,1024,1024
 ./build/gemm_bench --list
@@ -157,7 +142,7 @@ int main() {
 
 终端显示 median ms、TFLOPS、相对 cuBLAS 和 naive 的加速比。CSV 记录 mean/median/min/max、误差、形状、计时配置、设备/CUDA/cuBLAS 版本和布局，默认保存至 `results/gemm_<timestamp>.csv`。加速比采用同尺寸基线的 **median_ms / 当前 median_ms**。只选某一实现时不额外运行 naive，该比值显示 n/a；仅校验模式不填性能字段。失败会返回非零退出码。
 
-连续预取/Split-K 版本还显示 `vs subtile`，CSV 字段为 `speedup_over_subtile`：对应 subtile 的 median_ms / 连续版本的 median_ms。大于 1 表示连续版本更快；只在同次运行、同一尺寸下配对，缺失对照或仅校验时留空。测试把每阶段三种布局放在相邻行，HTML 报告额外列出布局对比表；合并多次运行时取配对比值的中位数，不从其他 CSV 借用基线。旧 `*_contiguous8x8` 名称仍表示 4×8 warp 线程布局，新版本使用独立的 `_warp2x16` 后缀，已有 CSV 的语义不变。
+CSV 保留 `speedup_over_subtile` 字段，当前测试集合没有连续预取/Split-K 变体，因此该字段留空，终端的 `vs subtile` 显示 n/a。绘图工具仍支持旧 CSV 中的连续布局结果和配对加速比，方便查看历史报告。
 
 ```bash
 compute-sanitizer --tool memcheck ./build/gemm_cuda_tests
@@ -169,7 +154,7 @@ compute-sanitizer --tool racecheck ./build/gemm_cuda_tests
 需要可用的 `ncu` CLI 和 NVIDIA GPU。脚本使用 Python 标准库，不需要 PyTorch 或绘图依赖：
 
 ```bash
-# 默认编译、运行 CTest，再测注册表中的全部 20 个实现；默认尺寸 4096³
+# 默认编译、运行 CTest，再测注册表中的全部 14 个实现；默认尺寸 4096³
 python3 scripts/profile_gemm_all.py --arch 80
 # 多个尺寸，输出到一个新的目录
 python3 scripts/profile_gemm_all.py --arch 80 \
