@@ -5,7 +5,6 @@ import argparse
 import csv
 import datetime
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
@@ -38,16 +37,90 @@ def run_logged(command, log):
 
 
 def read_metrics(path):
-    # Ignore profiler banners before the raw CSV header, if present.
-    lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
-    for index, line in enumerate(lines):
-        fields = next(csv.reader([line]), [])
-        if "Metric Name" in fields and "Metric Value" in fields:
-            rows = list(csv.DictReader(io.StringIO("\n".join(lines[index:]))))
-            rows = [r for r in rows if r.get("Metric Name") and r.get("Metric Value") is not None]
-            if rows:
-                return rows
-    raise RuntimeError(f"no raw NCU metrics collected in {path}")
+    # NCU raw CSV is commonly wide: launch metadata + one column per metric,
+    # followed by a units row and one row per kernel launch. Also accept the
+    # long Metric Name / Metric Unit / Metric Value form. Keep values as text.
+    rows = []
+    header = None
+    metric_columns = []
+    units = {}
+    with Path(path).open(encoding="utf-8-sig", newline="") as handle:
+        for fields in csv.reader(handle):
+            if "Metric Name" in fields and "Metric Value" in fields:
+                header, metric_columns, units = fields, [], {}
+                continue
+            if "ID" in fields and "Kernel Name" in fields and any("__" in f for f in fields):
+                header = fields
+                metric_columns = [i for i, name in enumerate(header) if "__" in name]
+                units = {}
+                continue
+            if header is None or len(fields) != len(header):
+                continue  # Ignore profiler banners, blank lines, and diagnostics.
+            record = dict(zip(header, fields))
+            if not metric_columns:
+                if record.get("Metric Name") and record.get("Metric Value", "").strip():
+                    rows.append(record)
+                continue
+            if not record["ID"].strip() and not record["Kernel Name"].strip():
+                units = {header[i]: fields[i] for i in metric_columns}
+                continue
+            if not record["ID"].strip().isdigit() or not record["Kernel Name"].strip():
+                continue
+            metadata = {name: value for name, value in record.items() if "__" not in name}
+            for i in metric_columns:
+                if fields[i].strip():
+                    rows.append(dict(metadata, **{"Metric Name": header[i],
+                        "Metric Unit": units.get(header[i], ""), "Metric Value": fields[i]}))
+    if rows:
+        return rows
+    raise RuntimeError(f"no raw NCU metrics collected in {path}; expected a long metric table or "
+                       "a wide raw table with ID, Kernel Name and metric columns; inspect the CSV and profiling log")
+
+
+def write_metrics(path, rows):
+    fields = list(dict.fromkeys(["implementation", "M", "N", "K", "source_report"] +
+                               [key for row in rows for key in row]))
+    with Path(path).open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def reparse_reports(directory):
+    """Recover exported CSVs without rerunning NCU or changing original reports."""
+    directory = directory.expanduser().resolve()
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    records = manifest["profiles"]
+    if not records:
+        raise RuntimeError(f"no profiles in {directory / 'manifest.json'}")
+    all_rows = []
+    failures = 0
+    for record in records:
+        # Do not turn failed capture/validation/export commands into successes
+        # merely because they left partial CSVs behind. Support old manifests.
+        if record["status"] != "ok" and not record.get("error", "").startswith("no raw NCU metrics collected"):
+            failures += 1
+            print(f"SKIPPED {record['impl']}: {record.get('error', 'profiling failed')}", file=sys.stderr)
+            continue
+        stem = record["impl"] + "__" + "x".join(map(str, record["shape"]))
+        try:
+            rows = read_metrics(directory / (stem + ".metrics.csv"))
+            m, n, k = record["shape"]
+            for row in rows:
+                row.update(implementation=record["impl"], M=m, N=n, K=k,
+                           source_report=str(directory / (stem + ".ncu-rep")))
+            all_rows.extend(rows)
+        except (OSError, RuntimeError, csv.Error) as error:
+            failures += 1
+            print(f"FAILED {record['impl']}: {error}", file=sys.stderr)
+    if all_rows:
+        # Preserve the original summary and manifest, including failure history.
+        output = directory / "metrics_all.reparsed.csv"
+        write_metrics(output, all_rows)
+        print(f"Saved: {output} ({len(records) - failures} passed, {failures} failed)")
+    else:
+        raise RuntimeError(f"no metrics recovered from {directory}")
+    return 1 if failures else 0
 
 
 def profile_one(ncu, executable, impl, shape, directory, *, warmup, device, seed,
@@ -74,7 +147,7 @@ def profile_one(ncu, executable, impl, shape, directory, *, warmup, device, seed
             row.update(implementation=impl, M=shape[0], N=shape[1], K=shape[2], source_report=str(report))
         record.update(status="ok", metrics_csv=str(raw_csv), metric_rows=len(rows))
         return record, rows
-    except (OSError, RuntimeError) as error:
+    except (OSError, RuntimeError, csv.Error) as error:
         record.update(status="failed", error=str(error))
         return record, []
 
@@ -95,7 +168,15 @@ def main(argv=None):
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output", type=Path, help="new output directory; existing directories are rejected")
+    parser.add_argument("--reparse", type=Path,
+                        help="only reparse an existing report directory into metrics_all.reparsed.csv; no NCU/GPU needed")
     args = parser.parse_args(argv)
+    if args.reparse:
+        try:
+            return reparse_reports(args.reparse)
+        except (OSError, RuntimeError, ValueError, KeyError, csv.Error) as error:
+            print(f"Error: {error}", file=sys.stderr)
+            return 1
     if args.jobs <= 0 or min(args.warmup, args.device, args.seed) < 0:
         parser.error("jobs must be positive; warmup/device/seed must be nonnegative")
     ncu = shutil.which(args.ncu)
@@ -162,12 +243,7 @@ def main(argv=None):
                 if record["status"] != "ok":
                     print(f"FAILED {impl}: {record['error']}", file=sys.stderr, flush=True)
         if all_rows:
-            fields = list(dict.fromkeys(["implementation", "M", "N", "K", "source_report"] +
-                                       [key for row in all_rows for key in row]))
-            with (output / "metrics_all.csv").open("w", newline="", encoding="utf-8") as handle:
-                writer = csv.DictWriter(handle, fieldnames=fields)
-                writer.writeheader()
-                writer.writerows(all_rows)
+            write_metrics(output / "metrics_all.csv", all_rows)
         failures = sum(r["status"] != "ok" for r in manifest["profiles"])
         print(f"Saved: {output} ({len(manifest['profiles']) - failures} passed, {failures} failed)")
         return 1 if failures else 0

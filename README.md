@@ -185,11 +185,19 @@ NCU 使用 `--profile-from-start off`，不会采集初始化、reference 或 wa
 
 - `<impl>__<M>x<N>x<K>.ncu-rep`：可用 `ncu-ui` 打开，包含源码关联。
 - 同名前缀的 `.metrics.csv` 和 `.log`：全部 raw metrics 及执行日志。
-- `metrics_all.csv`：汇总所有成功报告，附实现名、尺寸和报告路径；一个实现内部的多个 kernel 保留各自的 NCU ID/名称。
+- `metrics_all.csv`：汇总所有成功报告，附实现名、尺寸和报告路径；兼容 NCU raw CSV 的宽表（指标列和单位行）与长表，统一输出 `Metric Name / Metric Unit / Metric Value` 长表。一个实现内部的多个 kernel 保留各自的 NCU ID/名称；缺失值不补零，原始数值字符串和单位保留。
 - `manifest.json`：命令、源码哈希、NCU 版本、采集设置和逐项成功/失败状态。
 - `configure.log`、`build.log`、`tests.log`：未使用 `--skip-build` 时生成。
 
 单项采集失败时保留日志并继续其他实现，最终返回非零；没有报告或没有指标也视为失败。指定的 `--output` 必须是新目录，以免覆盖既有测量。
+
+旧脚本只识别长表，可能在 NCU 已成功生成报告并导出宽表后报 `no raw NCU metrics collected`。更新脚本后，可重新解析原目录中的 CSV，无需重新编译、采集或安装 NCU：
+
+```bash
+python3 scripts/profile_gemm_all.py --reparse results/ncu_<原采集目录>
+```
+
+该模式读取原 `manifest.json` 和各项 `.metrics.csv`，输出 `metrics_all.reparsed.csv`，保留原始报告、CSV、汇总及 manifest 中的失败记录。仅重新解析原本成功或因 `no raw NCU metrics collected` 失败的项目；真正的采集、校验或导出命令失败不会被标记为恢复成功，空导出仍报错。该模式不运行其他构建/采集选项。
 
 可手动采集单个实现：
 
