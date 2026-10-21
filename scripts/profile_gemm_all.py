@@ -11,7 +11,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -196,7 +196,11 @@ def main(argv=None):
             parent = ROOT / "results"
             parent.mkdir(exist_ok=True)
             stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            output = Path(tempfile.mkdtemp(prefix=f"ncu_{stamp}_", dir=parent))
+            # These are persistent reports, not private temporary files.
+            # mkdtemp forces mode 0700: root-created container reports then
+            # look empty to a host editor running as an ordinary user.
+            output = parent / f"ncu_{stamp}_{uuid.uuid4().hex[:8]}"
+            output.mkdir(mode=0o755)  # Still honor the caller's umask.
         manifest = dict(settings={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
                         source_sha256={}, commands=[], profiles=[],
                         note="NCU replay metrics; only the selected call is profiled. Split-K memset is issued "
@@ -242,6 +246,8 @@ def main(argv=None):
                 (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
                 if record["status"] != "ok":
                     print(f"FAILED {impl}: {record['error']}", file=sys.stderr, flush=True)
+                else:
+                    print(f"REPORT: {record['report']}", flush=True)
         if all_rows:
             write_metrics(output / "metrics_all.csv", all_rows)
         failures = sum(r["status"] != "ok" for r in manifest["profiles"])

@@ -4,6 +4,7 @@ import argparse
 import csv
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -91,6 +92,28 @@ class TestNcuProfile(unittest.TestCase):
                 warmup=1, device=0, seed=0, section_set="full", cache_control="none", clock_control="none")
         self.assertEqual(result["status"], "failed")
         self.assertEqual(rows, [])
+
+    @unittest.skipUnless(os.name == "posix", "POSIX directory permissions")
+    def test_default_report_directory_is_readable_from_host_with_normal_umask(self):
+        build = self.root / "build"
+        build.mkdir()
+        (build / "gemm_profile").touch()
+        original_umask = os.umask(0o022)
+        try:
+            with mock.patch.object(profile, "ROOT", self.root), \
+                 mock.patch.object(profile.shutil, "which", return_value="ncu"), \
+                 mock.patch.object(profile, "run_logged", self.fake_run):
+                for _ in range(2):
+                    self.assertEqual(profile.main(["--skip-build", "--build-dir", str(build),
+                                                   "--impls", "cublas", "--shapes", "128,256,48"]), 0)
+        finally:
+            os.umask(original_umask)
+        directories = list((self.root / "results").glob("ncu_*"))
+        self.assertEqual(len(directories), 2)
+        for directory in directories:
+            self.assertEqual(directory.stat().st_mode & 0o777, 0o755)
+            self.assertTrue((directory / "cublas__128x256x48.ncu-rep").is_file())
+            self.assertTrue((directory / "metrics_all.csv").is_file())
 
     def test_metrics_banners_are_ignored_but_empty_exports_fail(self):
         path = self.root / "raw.csv"
