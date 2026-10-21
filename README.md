@@ -2,7 +2,7 @@
 
 纯 C++17 / CUDA 核心项目，包含 19 个手写 FP32 GEMM 变体和一个严格 FP32 cuBLAS 对照。编译和测试不依赖 PyTorch、Python、LibTorch 或 CUTLASS；结果可视化是可选的 Python 后处理。
 
-这些实现复制自 `cuda-ai-infra-kernels/csrc/gemm`。保留手写 kernel 的计算和布局映射，将 tensor 接口、分配和 stream 获取替换成独立 C++ host 接口。thread tile 模板额外声明与启动线程数一致的 `__launch_bounds__`，约束编译器寄存器分配。原仓库未修改；Tensor Core/CUTLASS 不纳入此次复制。
+这些实现复制自 `cuda-ai-infra-kernels/csrc/gemm`。保留手写 kernel 的计算和布局映射，将 tensor 接口、分配和 stream 获取替换成独立 C++ host 接口。同步 thread tile / warp tile 共用一个 kernel 模板，并声明与启动线程数一致的 `__launch_bounds__`，约束编译器寄存器分配。原仓库未修改；Tensor Core/CUTLASS 不纳入此次复制。
 
 ## 一键运行
 
@@ -68,6 +68,8 @@ ctest --test-dir build --output-on-failure
 第三阶段严格保持一线程一个 C 元素，所以最大的 block tile 是 32×32（1024 个线程）。第四阶段才扩展 block tile 并引入连续 thread tile。第五阶段沿用后面三个 kernel 的 warp/lane/subtile 映射。
 
 `thread_tile_8x8_warp4x8` 与原版连续 `thread_tile_8x8` 共用计算、搬运、同步和写回代码，仅改变线程输出坐标映射。原版每个 warp 的线程按 2×16 排列，覆盖 16×128；新版按 4×8 排列，覆盖 32×64，block 内的 8 个 warp 按 4×2 排列。两版均为 256 线程、8 KiB shared memory，每线程 64 个累加器，使用相同 launch bounds；最终寄存器数和性能需实测。全量 benchmark、CUDA 回归测试及绘图均包含新版。
+
+`warp_tile` 也实例化同一个 `include/gemm/gemm_thread_tile.cuh` 模板：与 `thread_tile_8x8` 的唯一算法差异是编译期布局类型，分别为 `ThreadTileLayout8x8<false>` 和 `ThreadTileLayout8x8<true, 16>`。前者保留每线程四个 4×4 子块、warp 覆盖 64×32 的原映射；后者保留连续 8×8、warp 覆盖 16×128 的原映射。两者的 global/shared 搬运、A 后 B 的 float4 加载顺序、累加器初始化、乘加循环、同步、写回循环、`__restrict__`、`__launch_bounds__(256, 1)` 和 host 启动/错误检查路径全部共用。布局坐标会影响编译器生成的指令与寄存器分配，因此不保证机器码或寄存器数相同。重构后的性能应重新测量，不与旧版独立 warp kernel 的结果混用。
 
 第 6～8 阶段仅测试原 subtile 布局的 `prefetch_smem`、`prefetch_reg` 和 `split_k`。六个连续 8×8 变体已从实现注册表移除，不再参与 benchmark、CUDA 正确性回归或 NCU 采集，也不再接受对应的 `--impl` 名称。连续变体的 kernel 源码和直接调用接口仍保留。第 4 阶段的两个连续 8×8 thread tile 实现继续测试。
 
@@ -282,6 +284,7 @@ include/bench_utils.h          纯 C++ 尺寸/统计/校验
 include/cuda_resources.h       显存、stream、event、handle、graph 的 RAII
 include/gemm/gemm.h            device 指针接口及 host 参数检查
 include/gemm/gemm_regular.cuh  同步 float4 搬运
+include/gemm/gemm_thread_tile.cuh  同步 thread/warp tile 共用 kernel 和启动器
 include/gemm/thread_tile_layout.h  连续/subtile 的编译期坐标映射
 src/gemm/                     独立 kernel、cuBLAS、实现注册表
 src/benchmark.cpp             C++ host 驱动和 CSV 输出
