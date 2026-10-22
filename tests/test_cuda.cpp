@@ -68,6 +68,12 @@ int main() {
         bool rejected = false;
         try { kernel.launch(args); } catch (const std::invalid_argument&) { rejected = true; }
         if (!rejected) throw std::runtime_error("zero K was not rejected");
+        if (kernel.BK > 1) {
+          args.K = s.K - 1;
+          rejected = false;
+          try { kernel.launch(args); } catch (const std::invalid_argument&) { rejected = true; }
+          if (!rejected) throw std::runtime_error("partial K tile was not rejected");
+        }
         args.K = s.K;
         if (kernel.stage >= 3 && kernel.stage <= 8) {
           args.A = da.get() + 1;

@@ -54,9 +54,9 @@ target_link_libraries(gemm_cuda_tests PRIVATE gemm_kernels)
 add_executable(gemm_profile src/profile.cpp)
 target_link_libraries(gemm_profile PRIVATE gemm_kernels)
 add_test(NAME cuda_correctness COMMAND gemm_cuda_tests)
-add_test(NAME cuda_graph_smoke COMMAND gemm_bench --shapes 128,256,48
+add_test(NAME cuda_graph_smoke COMMAND gemm_bench --shapes 128,256,64
   --warmup 1 --repeat 2 --batch 2 --output graph_smoke.csv)
-add_test(NAME cuda_event_smoke COMMAND gemm_bench --shapes 256,128,16
+add_test(NAME cuda_event_smoke COMMAND gemm_bench --shapes 256,128,128
   --timing event --warmup 1 --repeat 2 --batch 2 --output event_smoke.csv)
 add_test(NAME cuda_profile_smoke COMMAND gemm_profile --impl split_k
   --shape 128,256,48 --warmup 1 --validate-only)

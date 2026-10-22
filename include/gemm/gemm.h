@@ -44,8 +44,6 @@ inline void check_gemm_args(const GemmArgs& args, int BM, int BN, int BK, bool v
 void gemm_naive(const GemmArgs& args);
 void gemm_block_tile(const GemmArgs& args);
 void gemm_block_tile_float4_16x16(const GemmArgs& args);
-void gemm_block_tile_float4_16x32(const GemmArgs& args);
-void gemm_block_tile_float4_32x32(const GemmArgs& args);
 void gemm_thread_tile_4x4(const GemmArgs& args);
 void gemm_thread_tile_4x8(const GemmArgs& args);
 void gemm_thread_tile_8x8(const GemmArgs& args);

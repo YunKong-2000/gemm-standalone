@@ -1,12 +1,12 @@
 # Standalone CUDA GEMM 优化链路
 
-纯 C++17 / CUDA 核心项目，默认测试 14 个手写 FP32 GEMM 变体和一个严格 FP32 cuBLAS 对照，另保留 6 个历史连续布局实现的源码。编译和测试不依赖 PyTorch、Python、LibTorch 或 CUTLASS；一键性能测试 + NCU 采集使用 Python 标准库，结果可视化是可选的 Python 后处理。
+纯 C++17 / CUDA 核心项目，默认测试 12 个手写 FP32 GEMM 变体和一个严格 FP32 cuBLAS 对照，另保留 6 个历史连续布局实现的源码。编译和测试不依赖 PyTorch、Python、LibTorch 或 CUTLASS；一键性能测试 + NCU 采集使用 Python 标准库，结果可视化是可选的 Python 后处理。
 
 这些实现复制自 `cuda-ai-infra-kernels/csrc/gemm`。保留手写 kernel 的计算和布局映射，将 tensor 接口、分配和 stream 获取替换成独立 C++ host 接口。同步 thread tile / warp tile 共用一个 kernel 模板，并声明与启动线程数一致的 `__launch_bounds__`，约束编译器寄存器分配。原仓库未修改；Tensor Core/CUTLASS 不纳入此次复制。
 
 ## 一键运行
 
-同时完成 **9 种形状的全部 15 个实现性能测试**，以及 **4096×8192×4096 的全部注册实现 NCU profiling**：
+同时完成 **9 种形状的全部 13 个实现性能测试**，以及 **4096×8192×4096 的全部注册实现 NCU profiling**：
 
 ```bash
 python3 scripts/bench_and_profile.py --arch 80
@@ -69,15 +69,13 @@ ctest --test-dir build --output-on-failure
 | 4096 | 8192 | 4096 |
 | 4096 | 4096 | 8192 |
 
-每种规模运行下面全部 15 个实现，共 **135 个组合**。NCU 默认只采集 4096×8192×4096，共 15 份实现报告。
+每种规模运行下面全部 13 个实现，共 **117 个组合**。NCU 默认只采集 4096×8192×4096，共 13 份实现报告。
 
 | 阶段 | impl | block tile BM×BN×BK | 每线程输出 |
 | --- | --- | --- | --- |
-| 1 | `naive` | 16×16×1 | 一个元素，无 smem |
-| 2 | `block_tile` | 16×16×8 | 一个元素，smem 标量搬运 |
-| 3 | `block_tile_float4_16x16` | 16×16×8 | 一个元素，float4 搬运 |
-| 3 | `block_tile_float4_16x32` | 16×32×8 | 一个元素，float4 搬运 |
-| 3 | `block_tile_float4_32x32` | 32×32×8 | 一个元素，float4 搬运 |
+| 1 | `naive` | 8×32×1 | 一个元素，无 smem；256 个一维线程，每个 warp 处理同一行的 32 个连续元素 |
+| 2 | `block_tile` | 16×16×64 | 一个元素，smem 标量搬运 |
+| 3 | `block_tile_float4_16x16` | 16×16×64 | 一个元素，float4 搬运 |
 | 4 | `thread_tile_4x4` | 128×128×8 | 连续 4×4 |
 | 4 | `thread_tile_4x8` | 128×128×8 | 连续 4×8 |
 | 4 | `thread_tile_8x8` | 128×128×8 | 连续 8×8 |
@@ -89,7 +87,7 @@ ctest --test-dir build --output-on-failure
 | 8 | `split_k` | 128×128×8 | smem + register 双缓冲，两路 K，atomicAdd |
 | 9 | `cublas` | 库选择 | 严格 FP32 |
 
-第三阶段严格保持一线程一个 C 元素，所以最大的 block tile 是 32×32（1024 个线程）。第四阶段才扩展 block tile 并引入连续 thread tile。第五阶段沿用后面三个 kernel 的 warp/lane/subtile 映射。
+第二、三阶段仅保留 16×16 输出 tile，统一 BK=64、256 线程/block、每线程一个 C 元素。A/B shared tile 均为 `[64][16]`，各 1024 个 float，共占 8 KiB。每轮 K 迭代中，标量版每线程分别搬运 A/B 各 4 个 float；float4 版每线程分别搬运 A/B 各一个 float4，全部 256 个线程均参与两份 tile 的搬运。每轮仍同步两次，同一 K 下同步次数是旧 BK=8 版本的 1/8。16×32 和 32×32 的 float4 入口已移除；绘图保留旧名称以读取历史 CSV。BK 增大后的寄存器占用和性能需要重新实测，旧 BK=8 结果不能作为新版数据。第四阶段才扩展 block tile 并引入连续 thread tile。第五阶段沿用后面三个 kernel 的 warp/lane/subtile 映射。
 
 `thread_tile_8x8_warp4x8` 与原版连续 `thread_tile_8x8` 共用计算、搬运、同步和写回代码，仅改变线程输出坐标映射。原版每个 warp 的线程按 2×16 排列，覆盖 16×128；新版按 4×8 排列，覆盖 32×64，block 内的 8 个 warp 按 4×2 排列。两版均为 256 线程、8 KiB shared memory，每线程 64 个累加器，使用相同 launch bounds；最终寄存器数和性能需实测。全量 benchmark、CUDA 回归测试及绘图均包含新版。
 
@@ -109,7 +107,7 @@ B[k * N + n]
 C[m * N + n]
 ```
 
-只支持正数且完整的 tile。全量运行要求 M/N 是 128 的倍数，K 是 16 的倍数；单独运行只需满足对应实现的倍数，Split-K 仍要求 `K % 16 == 0`。float4 路径要求 A/B/C 起始地址 16 字节对齐。host 检查尺寸、空指针、对齐和 grid.y 上限；无隐式布局转换、边界填充或回退。
+只支持正数且完整的 tile。全量运行要求 M/N 是 128 的倍数，K 是 64 的倍数；单独运行只需满足对应实现的倍数，两个 block tile 实现要求 `K % 64 == 0`，Split-K 仍要求 `K % 16 == 0`。float4 路径要求 A/B/C 起始地址 16 字节对齐。host 检查尺寸、空指针、对齐和 grid.y 上限；无隐式布局转换、边界填充或回退。
 
 ## C++ host 直接调用
 
@@ -143,7 +141,7 @@ int main() {
 
 ```bash
 # 快速验证全部实现
-./build/gemm_bench --shapes 128,256,16 256,128,48 --check-only
+./build/gemm_bench --shapes 128,256,64 256,128,128 --check-only
 # 自定义问题规模、预热与重复次数
 ./build/gemm_bench --shapes 1024,1024,1024 4096,4096,4096 \
   --warmup 2 --repeat 5 --batch 1 --output results/run.csv
@@ -180,7 +178,7 @@ compute-sanitizer --tool racecheck ./build/gemm_cuda_tests
 需要可用的 `ncu` CLI 和 NVIDIA GPU。脚本使用 Python 标准库，不需要 PyTorch 或绘图依赖：
 
 ```bash
-# 默认编译、运行 CTest，再测注册表中的全部 15 个实现；默认尺寸 4096×8192×4096
+# 默认编译、运行 CTest，再测注册表中的全部 13 个实现；默认尺寸 4096×8192×4096
 python3 scripts/profile_gemm_all.py --arch 80
 # 多个尺寸，输出到一个新的目录
 python3 scripts/profile_gemm_all.py --arch 80 \

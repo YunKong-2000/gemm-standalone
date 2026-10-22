@@ -2,11 +2,9 @@
 
 const std::vector<Kernel>& gemm_kernels() {
   static const std::vector<Kernel> kernels = {
-    {"naive", 1, 16, 16, 1, gemm_naive},
-    {"block_tile", 2, 16, 16, 8, gemm_block_tile},
-    {"block_tile_float4_16x16", 3, 16, 16, 8, gemm_block_tile_float4_16x16},
-    {"block_tile_float4_16x32", 3, 16, 32, 8, gemm_block_tile_float4_16x32},
-    {"block_tile_float4_32x32", 3, 32, 32, 8, gemm_block_tile_float4_32x32},
+    {"naive", 1, 8, 32, 1, gemm_naive},
+    {"block_tile", 2, 16, 16, 64, gemm_block_tile},
+    {"block_tile_float4_16x16", 3, 16, 16, 64, gemm_block_tile_float4_16x16},
     {"thread_tile_4x4", 4, 128, 128, 8, gemm_thread_tile_4x4},
     {"thread_tile_4x8", 4, 128, 128, 8, gemm_thread_tile_4x8},
     {"thread_tile_8x8", 4, 128, 128, 8, gemm_thread_tile_8x8},

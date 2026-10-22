@@ -1,7 +1,7 @@
 #include "gemm/gemm_regular.cuh"
 
 namespace {
-constexpr int BK = 8;
+constexpr int BK = 64;
 
 template<int BM, int BN>
 __global__ void gemm_block_tile_float4_kernel(
@@ -12,6 +12,8 @@ __global__ void gemm_block_tile_float4_kernel(
 {
   constexpr int THREADS = BM * BN;
   static_assert(THREADS <= 1024);
+  // Every thread copies one float4 from each input tile per K iteration.
+  static_assert(BK * BM / 4 == THREADS && BK * BN / 4 == THREADS);
   const int tid = threadIdx.x;
   const int ty = tid / BN, tx = tid % BN;
   const int by = blockIdx.y, bx = blockIdx.x;
@@ -44,10 +46,4 @@ void launch_block_tile_float4(const GemmArgs& args) {
 
 void gemm_block_tile_float4_16x16(const GemmArgs& args) {
   launch_block_tile_float4<16, 16>(args);
-}
-void gemm_block_tile_float4_16x32(const GemmArgs& args) {
-  launch_block_tile_float4<16, 32>(args);
-}
-void gemm_block_tile_float4_32x32(const GemmArgs& args) {
-  launch_block_tile_float4<32, 32>(args);
 }

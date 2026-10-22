@@ -15,6 +15,7 @@ IMPLEMENTATIONS = (
     ("naive", "1  Naive"),
     ("block_tile", "2  Shared memory"),
     ("block_tile_float4_16x16", "3  float4 / block 16x16"),
+    # Removed from the kernel registry; keep labels for historical CSVs.
     ("block_tile_float4_16x32", "3  float4 / block 16x32"),
     ("block_tile_float4_32x32", "3  float4 / block 32x32"),
     ("thread_tile_4x4", "4  Thread tile 4x4"),

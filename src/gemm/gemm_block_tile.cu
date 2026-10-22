@@ -3,7 +3,7 @@
 namespace {
 constexpr int BM = 16;
 constexpr int BN = 16;
-constexpr int BK = 8;
+constexpr int BK = 64;
 constexpr int THREADS = BM * BN;
 
 __global__ void gemm_block_tile_kernel(
