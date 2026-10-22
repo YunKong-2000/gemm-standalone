@@ -271,6 +271,51 @@ def plots(summary, shapes, metadata, output, formats):
     fig.text(0.045, 0.012, "Tile and layout variants are shown separately. Later stages are not guaranteed to be faster.", fontsize=9)
     fig.subplots_adjust(left=0.07, right=0.8, top=0.84, bottom=0.31)
     save(fig, "tflops_by_stage")
+
+    # Separate panels expose overlapping shape curves and small-problem behavior.
+    # cuBLAS is a reference, not another step in the handwritten optimization chain.
+    handwritten = [name for name in names if name != "cublas"]
+    if handwritten:
+        short_labels = {
+            "naive": "Naive", "block_tile": "Block tile",
+            "block_tile_float4_16x16": "float4 16x16",
+            "block_tile_float4_16x32": "float4 16x32",
+            "block_tile_float4_32x32": "float4 32x32",
+            "thread_tile_4x4": "Thread 4x4", "thread_tile_4x8": "Thread 4x8",
+            "thread_tile_8x8": "Thread 8x8",
+            "thread_tile_8x8_warp4x8": "8x8 / warp 4x8",
+            "thread_tile_8x16": "Thread 8x16", "warp_tile": "Warp tile",
+            "prefetch_smem": "Prefetch smem", "prefetch_reg": "Prefetch reg",
+            "split_k": "Split-K",
+        }
+        ncols = min(2, len(shapes))
+        nrows = math.ceil(len(shapes) / ncols)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(9 * ncols, 4.2 * nrows + 1.4), squeeze=False)
+        for index, (shape, ax) in enumerate(zip(shapes, axes.flat)):
+            values = [lookup.get((name, shape), {}).get("tflops", np.nan) for name in handwritten]
+            ax.plot(range(len(handwritten)), values, marker="o", markersize=4,
+                    linewidth=2, color=colors(index % 10))
+            baseline = lookup.get(("cublas", shape), {}).get("tflops")
+            if baseline is not None:
+                ax.axhline(baseline, color="#536174", linestyle="--", linewidth=1.2,
+                           label=f"cuBLAS FP32: {baseline:.2f} TFLOPS")
+                ax.legend(loc="upper left", fontsize=9, frameon=False)
+            ax.set_title(shape_labels[index], loc="left", fontsize=14, pad=10)
+            ax.set_ylabel("TFLOPS")
+            ax.set_ylim(0, max([v for v in values if np.isfinite(v)] + [baseline or 0, 0.01]) * 1.22)
+            ax.set_xticks(range(len(handwritten)), [short_labels.get(n, LABELS[n]) for n in handwritten],
+                          rotation=40, ha="right", fontsize=8)
+            ax.grid(axis="y", alpha=0.2)
+            ax.spines[["top", "right"]].set_visible(False)
+        for ax in list(axes.flat)[len(shapes):]:
+            ax.set_visible(False)
+        fig.suptitle("GEMM optimization curves by problem shape", x=0.05, y=0.985,
+                     ha="left", fontsize=22, fontweight="bold")
+        fig.text(0.05, 0.958, subtitle + "  |  M x N x K", color="#40536b")
+        fig.text(0.05, 0.015, "Each panel has its own y-axis scale. Points use median GPU time; dashed lines show cuBLAS.\n"
+                 "Tile/layout choices are variants, not cumulative additions. Split-K includes output clear.", fontsize=10)
+        fig.subplots_adjust(left=0.05, right=0.985, top=0.92, bottom=0.09, hspace=0.65, wspace=0.16)
+        save(fig, "tflops_by_shape")
     return images
 
 

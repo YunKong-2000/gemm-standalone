@@ -14,7 +14,7 @@ struct Shape { int M, N, K; };
 inline std::vector<Shape> default_shapes() {
   return {{256,256,256}, {1024,1024,1024}, {2048,2048,2048},
           {4096,4096,2048}, {4096,1024,4096}, {1024,4096,4096}, {4096,4096,4096},
-          {4096,8192,4096}};
+          {4096,8192,4096}, {4096,4096,8192}};
 }
 
 inline int parse_integer(const std::string& text, int minimum = 1) {

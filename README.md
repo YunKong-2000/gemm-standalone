@@ -6,7 +6,7 @@
 
 ## 一键运行
 
-同时完成 **8 种形状的全部 15 个实现性能测试**，以及 **4096×8192×4096 的全部注册实现 NCU profiling**：
+同时完成 **9 种形状的全部 15 个实现性能测试**，以及 **4096×8192×4096 的全部注册实现 NCU profiling**：
 
 ```bash
 python3 scripts/bench_and_profile.py --arch 80
@@ -55,7 +55,7 @@ ctest --test-dir build --output-on-failure
 
 ## 默认规模和实现
 
-规模顺序为 **M×N×K**，在原有 7 种规模后加入最大形状 4096×8192×4096：
+规模顺序为 **M×N×K**，默认包含以下 9 种规模：
 
 | M | N | K |
 | ---: | ---: | ---: |
@@ -67,8 +67,9 @@ ctest --test-dir build --output-on-failure
 | 1024 | 4096 | 4096 |
 | 4096 | 4096 | 4096 |
 | 4096 | 8192 | 4096 |
+| 4096 | 4096 | 8192 |
 
-每种规模运行下面全部 15 个实现，共 **120 个组合**。NCU 默认只采集最大形状，共 15 份实现报告。
+每种规模运行下面全部 15 个实现，共 **135 个组合**。NCU 默认只采集 4096×8192×4096，共 15 份实现报告。
 
 | 阶段 | impl | block tile BM×BN×BK | 每线程输出 |
 | --- | --- | --- | --- |
@@ -277,6 +278,7 @@ python3 scripts/plot_results.py --input results/run_a.csv results/run_b.csv \
 | `speedup_by_shape.png` | 相对同尺寸 naive 的加速比热力图，与参考图一样逐尺寸、逐实现展示；1× 居中，低于 1× 红色，高于 1× 绿色，对数色阶 |
 | `cublas_speedup_by_shape.png` | 相对严格 FP32 cuBLAS 的加速比；大于 1× 表示快于 cuBLAS |
 | `tflops_by_stage.png` | 已测实现沿优化链路的吞吐量曲线，每条线对应一种问题规模 |
+| `tflops_by_shape.png` | 逐规模分面的吞吐量曲线，各面板独立纵轴，虚线标记同规模 cuBLAS；便于观察小规模及总览中重叠的曲线 |
 | `latency_by_shape.png` | 每个实现/规模的 median ms 热力图 |
 | `report.html` | 汇总图表、每种规模最快的已测手写 kernel、数据来源和统计说明 |
 | `summary.csv` | 每个实现/规模的耗时、TFLOPS、加速比及样本数 |

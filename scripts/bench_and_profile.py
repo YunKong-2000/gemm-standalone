@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark all GEMMs on eight shapes, then profile all at M,N,K=4096,8192,4096."""
+"""Benchmark all GEMMs on nine shapes, then profile all at M,N,K=4096,8192,4096."""
 
 import argparse
 import datetime

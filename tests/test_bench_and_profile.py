@@ -50,7 +50,7 @@ class TestBenchAndProfile(unittest.TestCase):
                 self.assertEqual(args[args.index(flag) + 1], expected)
         for flag, expected in (("--repeat", "5"), ("--batch", "1"), ("--impl", "all")):
             self.assertEqual(bench[bench.index(flag) + 1], expected)
-        self.assertNotIn("--shapes", bench)  # Use all eight C++ defaults.
+        self.assertNotIn("--shapes", bench)  # Use all nine C++ defaults.
         self.assertIn("--skip-build", ncu_args)
         self.assertNotIn("--impls", ncu_args)  # Discover the complete registry.
         self.assertEqual(ncu_args[ncu_args.index("--shapes") + 1], "4096,8192,4096")

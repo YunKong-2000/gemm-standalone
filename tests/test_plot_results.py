@@ -175,7 +175,8 @@ class TestPlotResults(unittest.TestCase):
             self.assertIn("N/A",report.read_text())
             manifest = json.loads((report.parent / "manifest.json").read_text())
             self.assertEqual(manifest["environment"]["timing"],meta["timing"])
-            self.assertEqual(len(list(report.parent.glob("*.png"))),4)
+            self.assertEqual(len(list(report.parent.glob("*.png"))),5)
+            self.assertIn("tflops_by_shape.png", report.read_text())
             for image in report.parent.glob("*.png"):
                 self.assertGreater(image.stat().st_size,1000)
         self.assertIn("group_01/report.html",(output / "index.html").read_text())

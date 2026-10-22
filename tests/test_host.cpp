@@ -54,12 +54,12 @@ int main() {
     check_thread_layout<true>();
     check_thread_layout<true, 16>();
     const auto shapes = default_shapes();
-    require(shapes.size() == 8, "eight default shapes");
-    require(shapes.back().M == 4096 && shapes.back().N == 8192 && shapes.back().K == 4096,
-            "largest default shape is 4096x8192x4096 in M,N,K order");
+    require(shapes.size() == 9, "nine default shapes");
+    require(shapes.back().M == 4096 && shapes.back().N == 4096 && shapes.back().K == 8192,
+            "last default shape is 4096x4096x8192 in M,N,K order");
     for (auto s : shapes) {
       check_shape(s, 128, 128, 16);
-      require(s.M <= 4096 && s.N <= 8192 && s.K <= 4096, "default shape bounds");
+      require(s.M <= 4096 && s.N <= 8192 && s.K <= 8192, "default shape bounds");
     }
     auto s = parse_shape("128x256x16");
     require(s.M == 128 && s.N == 256 && s.K == 16, "M,N,K order");
