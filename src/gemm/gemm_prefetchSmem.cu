@@ -3,6 +3,7 @@
 
 namespace {
 constexpr int THREADS = 256;
+constexpr int MIN_BLOCKS_PER_SM = 2;
 constexpr int BM = 128;
 constexpr int BN = 128;
 constexpr int BK = 8;
@@ -82,8 +83,12 @@ __forceinline__ __device__ void loadSmemAsync(
 
 // Host validation guarantees full tiles and aligned global pointers. All
 // device loads/stores are unconditional; there are no element bounds checks.
+// On SM80, 64K registers / (256 threads * 2 blocks) caps allocation at 128
+// registers/thread. Without this bound, scheduling the unrolled inner product
+// can extend fragment lifetimes enough to leave room for only one block/SM.
+// The two shared-memory stages use 16 KiB/block, so two blocks also fit in smem.
 template<bool Contiguous, int LaneCols = Contiguous ? 8 : 4>
-__global__ void gemm_kernel(
+__global__ __launch_bounds__(THREADS, MIN_BLOCKS_PER_SM) void gemm_kernel(
   const int M,
   const int N,
   const int K,

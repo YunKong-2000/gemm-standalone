@@ -95,6 +95,10 @@ ctest --test-dir build --output-on-failure
 
 第 6～8 阶段仅测试原 subtile 布局的 `prefetch_smem`、`prefetch_reg` 和 `split_k`。六个连续 8×8 变体已从实现注册表移除，不再参与 benchmark、CUDA 正确性回归或 NCU 采集，也不再接受对应的 `--impl` 名称。连续变体的 kernel 源码和直接调用接口仍保留。第 4 阶段的两个连续 8×8 thread tile 实现继续测试。
 
+`prefetch_smem` 的三个布局共用 `__launch_bounds__(256, 2)`。在 A100/SM80 上，65536 个寄存器除以每 block 256 线程、每 SM 2 个 block，给出每线程 128 个寄存器的分配上限；每 block 的静态 shared memory 为 16 KiB，两个 block 的 shared memory 也可容纳。原 A100 报告中该实现使用 132 个寄存器/线程（分配粒度取整后为 136），寄存器限制为 1 block/SM；`prefetch_reg` 使用 125 个（取整后为 128），可驻留 2 blocks/SM。新增约束让编译器按相同的两 block 资源目标调度和分配，保留 BK=8 的完整展开与 `cp.async` 双缓冲。此目标表示资源允许驻留，实际并发还取决于 grid 大小和调度；A100 上两 block 共 16 个 warp，对应 25% 理论 occupancy。
+
+修改后需重新编译并查看 `GEMM_PTXAS_VERBOSE=ON` 的寄存器与 spill 报告，再通过 NCU 核对 `launch__registers_per_thread` 不超过 128、Occupancy 中寄存器允许至少 2 blocks/SM，并比较 `prefetch_reg`。launch bounds 可能引发 spill，不能仅凭寄存器数判定性能改善。可运行 `python3 scripts/profile_gemm_all.py --arch 80 --impls prefetch_smem prefetch_reg` 完成构建、既有正确性回归及两实现的采集；本机无 CUDA 时无法确认新版本的实际寄存器数、spill 或耗时。
+
 三个 Split-K 变体现在同时使用 shared-memory 和 register 双缓冲。每个 BK=8 tile 先将 k=0 读入 `rA[0][8]` / `rB[0][8]`，循环中先加载 k+1 到另一组寄存器，再计算当前 k，最后单独计算 k=7。各 K 分片的第一个 tile 和最后一个 tile 均使用相同流程；两路划分、atomicAdd 和同 stream 清零不变。该版本从 `prefetch_reg` 的计算流水继续添加 Split-K；旧 CSV 中的 Split-K 没有 register 双缓冲，比较前后版本时请分别保存报告。
 
 第四阶段的 4×4 / 4×8 / 8×8 / 8×16 变体分别启动 1024 / 512 / 256 / 128 个线程。8×16 复用同一同步 thread tile 模板，每线程 128 个累加器，shared memory 仍为 8 KiB。模板通过 `__launch_bounds__((BM / TM) * (BN / TN), 1)` 告知编译器真实的线程数与每 SM 至少一个 block 的资源目标。尤其 A800/SM80 每 block 最多 65536 个 32-bit 寄存器，1024 线程的变体不能超过每线程 64 个寄存器；没有该约束时可能编译成功但启动报 `too many resources requested for launch`。编译器可能通过重排或 spill 满足约束，具体性能需实测。用 `cmake -S . -B build -DGEMM_PTXAS_VERBOSE=ON` 开启寄存器和 spill 报告。
