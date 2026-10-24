@@ -59,6 +59,6 @@ add_test(NAME cuda_graph_smoke COMMAND gemm_bench --shapes 128,256,64
 add_test(NAME cuda_event_smoke COMMAND gemm_bench --shapes 256,128,128
   --timing event --warmup 1 --repeat 2 --batch 2 --output event_smoke.csv)
 add_test(NAME cuda_profile_smoke COMMAND gemm_profile --impl split_k
-  --shape 128,256,48 --warmup 1 --validate-only)
+  --shape 128,256,96 --warmup 1 --validate-only)
 set_tests_properties(cuda_correctness cuda_graph_smoke cuda_event_smoke cuda_profile_smoke
   PROPERTIES LABELS CUDA RUN_SERIAL TRUE)

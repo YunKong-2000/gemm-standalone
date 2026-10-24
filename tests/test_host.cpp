@@ -58,7 +58,8 @@ int main() {
     require(shapes.back().M == 4096 && shapes.back().N == 4096 && shapes.back().K == 8192,
             "last default shape is 4096x4096x8192 in M,N,K order");
     for (auto s : shapes) {
-      check_shape(s, 128, 128, 16);
+      // BK=64 block tiles also satisfy BK=16 tiles and Split-K K%32.
+      check_shape(s, 128, 128, 64);
       require(s.M <= 4096 && s.N <= 8192 && s.K <= 8192, "default shape bounds");
     }
     auto s = parse_shape("128x256x16");

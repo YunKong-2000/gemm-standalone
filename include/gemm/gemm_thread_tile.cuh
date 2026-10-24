@@ -6,7 +6,7 @@
 namespace gemm_detail {
 constexpr int BM = 128;
 constexpr int BN = 128;
-constexpr int BK = 8;
+constexpr int BK = 16;
 
 // Row-major thread order for contiguous thread tiles.
 template<int TM, int TN>

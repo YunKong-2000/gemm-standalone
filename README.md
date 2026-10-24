@@ -6,7 +6,7 @@
 
 ## 一键运行
 
-同时完成 **9 种形状的全部 13 个实现性能测试**，以及 **4096×8192×4096 的全部注册实现 NCU profiling**：
+同时完成 **9 种形状的全部 9 个实现性能测试**，以及 **4096×8192×4096 的全部注册实现 NCU profiling**：
 
 ```bash
 python3 scripts/bench_and_profile.py --arch 80
@@ -69,39 +69,35 @@ ctest --test-dir build --output-on-failure
 | 4096 | 8192 | 4096 |
 | 4096 | 4096 | 8192 |
 
-每种规模运行下面全部 13 个实现，共 **117 个组合**。NCU 默认只采集 4096×8192×4096，共 13 份实现报告。
+每种规模运行下面全部 9 个实现，共 **81 个组合**。NCU 默认只采集 4096×8192×4096，共 9 份实现报告。
 
 | 阶段 | impl | block tile BM×BN×BK | 每线程输出 |
 | --- | --- | --- | --- |
 | 1 | `naive` | 8×32×1 | 一个元素，无 smem；256 个一维线程，每个 warp 处理同一行的 32 个连续元素 |
 | 2 | `block_tile` | 16×16×64 | 一个元素，smem 标量搬运 |
 | 3 | `block_tile_float4_16x16` | 16×16×64 | 一个元素，float4 搬运 |
-| 4 | `thread_tile_4x4` | 128×128×8 | 连续 4×4 |
-| 4 | `thread_tile_4x8` | 128×128×8 | 连续 4×8 |
-| 4 | `thread_tile_8x8` | 128×128×8 | 连续 8×8 |
-| 4 | `thread_tile_8x8_warp4x8` | 128×128×8 | 连续 8×8，warp 内线程按 4×8 排列 |
-| 4 | `thread_tile_8x16` | 128×128×8 | 连续 8×16，128 线程/block |
-| 5 | `warp_tile` | 128×128×8 | 四个 4×4 子块 |
-| 6 | `prefetch_smem` | 128×128×8 | smem 双缓冲 |
-| 7 | `prefetch_reg` | 128×128×8 | smem + register 双缓冲 |
-| 8 | `split_k` | 128×128×8 | smem + register 双缓冲，两路 K，atomicAdd |
+| 4 | `thread_tile_8x8` | 128×128×16 | 连续 8×8 |
+| 5 | `warp_tile` | 128×128×16 | 四个 4×4 子块 |
+| 6 | `prefetch_smem` | 128×128×16 | smem 双缓冲 |
+| 7 | `prefetch_reg` | 128×128×16 | smem + register 双缓冲 |
+| 8 | `split_k` | 128×128×16 | smem + register 双缓冲，两路 K，atomicAdd |
 | 9 | `cublas` | 库选择 | 严格 FP32 |
 
 第二、三阶段仅保留 16×16 输出 tile，统一 BK=64、256 线程/block、每线程一个 C 元素。A/B shared tile 均为 `[64][16]`，各 1024 个 float，共占 8 KiB。每轮 K 迭代中，标量版每线程分别搬运 A/B 各 4 个 float；float4 版每线程分别搬运 A/B 各一个 float4，全部 256 个线程均参与两份 tile 的搬运。每轮仍同步两次，同一 K 下同步次数是旧 BK=8 版本的 1/8。16×32 和 32×32 的 float4 入口已移除；绘图保留旧名称以读取历史 CSV。BK 增大后的寄存器占用和性能需要重新实测，旧 BK=8 结果不能作为新版数据。第四阶段才扩展 block tile 并引入连续 thread tile。第五阶段沿用后面三个 kernel 的 warp/lane/subtile 映射。
 
-`thread_tile_8x8_warp4x8` 与原版连续 `thread_tile_8x8` 共用计算、搬运、同步和写回代码，仅改变线程输出坐标映射。原版每个 warp 的线程按 2×16 排列，覆盖 16×128；新版按 4×8 排列，覆盖 32×64，block 内的 8 个 warp 按 4×2 排列。两版均为 256 线程、8 KiB shared memory，每线程 64 个累加器，使用相同 launch bounds；最终寄存器数和性能需实测。全量 benchmark、CUDA 回归测试及绘图均包含新版。
+第 4～8 阶段的手写 kernel 统一使用 BK=16。第 4 阶段仅注册 `thread_tile_8x8`，其余 thread tile 变体保留源码和直接调用接口，但不参与 benchmark、CUDA 正确性回归或 NCU 采集，也不接受对应的 `--impl` 名称。绘图仍支持读取历史 CSV 中的变体。`thread_tile_8x8` 每个 warp 的线程按 2×16 排列，覆盖 16×128；每 block 256 线程、16 KiB shared memory，每线程 64 个累加器。
 
 `warp_tile` 也实例化同一个 `include/gemm/gemm_thread_tile.cuh` 模板：与 `thread_tile_8x8` 的唯一算法差异是编译期布局类型，分别为 `ThreadTileLayout8x8<false>` 和 `ThreadTileLayout8x8<true, 16>`。前者保留每线程四个 4×4 子块、warp 覆盖 64×32 的原映射；后者保留连续 8×8、warp 覆盖 16×128 的原映射。两者的 global/shared 搬运、A 后 B 的 float4 加载顺序、累加器初始化、乘加循环、同步、写回循环、`__restrict__`、`__launch_bounds__(256, 1)` 和 host 启动/错误检查路径全部共用。布局坐标会影响编译器生成的指令与寄存器分配，因此不保证机器码或寄存器数相同。重构后的性能应重新测量，不与旧版独立 warp kernel 的结果混用。
 
-第 6～8 阶段仅测试原 subtile 布局的 `prefetch_smem`、`prefetch_reg` 和 `split_k`。六个连续 8×8 变体已从实现注册表移除，不再参与 benchmark、CUDA 正确性回归或 NCU 采集，也不再接受对应的 `--impl` 名称。连续变体的 kernel 源码和直接调用接口仍保留。第 4 阶段的两个连续 8×8 thread tile 实现继续测试。
+第 6～8 阶段仅测试原 subtile 布局的 `prefetch_smem`、`prefetch_reg` 和 `split_k`。六个连续 8×8 变体已从实现注册表移除，不再参与 benchmark、CUDA 正确性回归或 NCU 采集，也不再接受对应的 `--impl` 名称。连续变体的 kernel 源码和直接调用接口仍保留。第 4 阶段仅测试 `thread_tile_8x8`。
 
-`prefetch_smem` 的三个布局共用 `__launch_bounds__(256, 2)`。在 A100/SM80 上，65536 个寄存器除以每 block 256 线程、每 SM 2 个 block，给出每线程 128 个寄存器的分配上限；每 block 的静态 shared memory 为 16 KiB，两个 block 的 shared memory 也可容纳。原 A100 报告中该实现使用 132 个寄存器/线程（分配粒度取整后为 136），寄存器限制为 1 block/SM；`prefetch_reg` 使用 125 个（取整后为 128），可驻留 2 blocks/SM。新增约束让编译器按相同的两 block 资源目标调度和分配，保留 BK=8 的完整展开与 `cp.async` 双缓冲。此目标表示资源允许驻留，实际并发还取决于 grid 大小和调度；A100 上两 block 共 16 个 warp，对应 25% 理论 occupancy。
+`prefetch_smem` 的三个布局共用 `__launch_bounds__(256, 2)`。在 A100/SM80 上，65536 个寄存器除以每 block 256 线程、每 SM 2 个 block，给出每线程 128 个寄存器的分配上限；BK=16 时每 block 的静态 shared memory 为 32 KiB，两个 block 的 shared memory 也可容纳。旧 BK=8 的 A100 报告中该实现使用 132 个寄存器/线程（分配粒度取整后为 136），寄存器限制为 1 block/SM；`prefetch_reg` 使用 125 个（取整后为 128），可驻留 2 blocks/SM。新增约束让编译器按相同的两 block 资源目标调度和分配，使用 BK=16 的完整展开与 `cp.async` 双缓冲。此目标表示资源允许驻留，实际并发还取决于 grid 大小和调度；A100 上两 block 共 16 个 warp，对应 25% 理论 occupancy。
 
 修改后需重新编译并查看 `GEMM_PTXAS_VERBOSE=ON` 的寄存器与 spill 报告，再通过 NCU 核对 `launch__registers_per_thread` 不超过 128、Occupancy 中寄存器允许至少 2 blocks/SM，并比较 `prefetch_reg`。launch bounds 可能引发 spill，不能仅凭寄存器数判定性能改善。可运行 `python3 scripts/profile_gemm_all.py --arch 80 --impls prefetch_smem prefetch_reg` 完成构建、既有正确性回归及两实现的采集；本机无 CUDA 时无法确认新版本的实际寄存器数、spill 或耗时。
 
-三个 Split-K 变体现在同时使用 shared-memory 和 register 双缓冲。每个 BK=8 tile 先将 k=0 读入 `rA[0][8]` / `rB[0][8]`，循环中先加载 k+1 到另一组寄存器，再计算当前 k，最后单独计算 k=7。各 K 分片的第一个 tile 和最后一个 tile 均使用相同流程；两路划分、atomicAdd 和同 stream 清零不变。该版本从 `prefetch_reg` 的计算流水继续添加 Split-K；旧 CSV 中的 Split-K 没有 register 双缓冲，比较前后版本时请分别保存报告。
+三个 Split-K 变体现在同时使用 shared-memory 和 register 双缓冲。每个 BK=16 tile 先将 k=0 读入 `rA[0][8]` / `rB[0][8]`，循环中先加载 k+1 到另一组寄存器，再计算当前 k，最后单独计算 k=15。各 K 分片的第一个 tile 和最后一个 tile 均使用相同流程；两路划分、atomicAdd 和同 stream 清零不变。输入 K 必须是 `SPLIT_K * BK = 32` 的倍数，注册表的 K 整除字段因此为 32；流水线回归按该字段生成 1～5 个 tile/分片的尺寸，profile smoke 使用 K=96。该版本从 `prefetch_reg` 的计算流水继续添加 Split-K；旧 CSV 中的 Split-K 没有 register 双缓冲，比较前后版本时请分别保存报告。
 
-第四阶段的 4×4 / 4×8 / 8×8 / 8×16 变体分别启动 1024 / 512 / 256 / 128 个线程。8×16 复用同一同步 thread tile 模板，每线程 128 个累加器，shared memory 仍为 8 KiB。模板通过 `__launch_bounds__((BM / TM) * (BN / TN), 1)` 告知编译器真实的线程数与每 SM 至少一个 block 的资源目标。尤其 A800/SM80 每 block 最多 65536 个 32-bit 寄存器，1024 线程的变体不能超过每线程 64 个寄存器；没有该约束时可能编译成功但启动报 `too many resources requested for launch`。编译器可能通过重排或 spill 满足约束，具体性能需实测。用 `cmake -S . -B build -DGEMM_PTXAS_VERBOSE=ON` 开启寄存器和 spill 报告。
+第四阶段的 4×4 / 4×8 / 8×8 / 8×16 变体分别启动 1024 / 512 / 256 / 128 个线程。8×16 复用同一同步 thread tile 模板，每线程 128 个累加器，shared memory 为 16 KiB。模板通过 `__launch_bounds__((BM / TM) * (BN / TN), 1)` 告知编译器真实的线程数与每 SM 至少一个 block 的资源目标。尤其 A800/SM80 每 block 最多 65536 个 32-bit 寄存器，1024 线程的变体不能超过每线程 64 个寄存器；没有该约束时可能编译成功但启动报 `too many resources requested for launch`。编译器可能通过重排或 spill 满足约束，具体性能需实测。用 `cmake -S . -B build -DGEMM_PTXAS_VERBOSE=ON` 开启寄存器和 spill 报告。
 
 所有输入均为 FP32，**A 为列主序 `[M,K]`，B/C 为行主序**。物理下标：
 
@@ -150,8 +146,7 @@ int main() {
 ./build/gemm_bench --shapes 1024,1024,1024 4096,4096,4096 \
   --warmup 2 --repeat 5 --batch 1 --output results/run.csv
 # 单独测试一个变体，仍自动加入 cuBLAS 对照
-./build/gemm_bench --impl thread_tile_4x8 --shapes 128,256,24
-./build/gemm_bench --impl thread_tile_8x8_warp4x8 --shapes 1024,1024,1024
+./build/gemm_bench --impl thread_tile_8x8 --shapes 128,256,32 1024,1024,1024
 # 不使用 CUDA Graph
 ./build/gemm_bench --timing event --shapes 1024,1024,1024
 ./build/gemm_bench --list
@@ -182,14 +177,14 @@ compute-sanitizer --tool racecheck ./build/gemm_cuda_tests
 需要可用的 `ncu` CLI 和 NVIDIA GPU。脚本使用 Python 标准库，不需要 PyTorch 或绘图依赖：
 
 ```bash
-# 默认编译、运行 CTest，再测注册表中的全部 13 个实现；默认尺寸 4096×8192×4096
+# 默认编译、运行 CTest，再测注册表中的全部 9 个实现；默认尺寸 4096×8192×4096
 python3 scripts/profile_gemm_all.py --arch 80
 # 多个尺寸，输出到一个新的目录
 python3 scripts/profile_gemm_all.py --arch 80 \
   --shapes 1024,1024,1024 4096,4096,4096 --output results/ncu_layout_comparison
-# 只分析同步加载的三个布局
+# 只分析同步加载的两个布局
 python3 scripts/profile_gemm_all.py --skip-build \
-  --impls thread_tile_8x8 thread_tile_8x8_warp4x8 warp_tile
+  --impls thread_tile_8x8 warp_tile
 ```
 
 `--build-dir`（或 `GEMM_BUILD_DIR`）、`--jobs`、`--ncu`（或 `NCU`）、`--device`、`--warmup`、`--seed` 均可设置。构建默认开启 `GEMM_PTXAS_VERBOSE`，寄存器数和 spill 信息保存在 `build.log`。`--skip-build` 只复用已经重新构建的 `gemm_profile`；脚本不会自动判断旧可执行文件是否包含最新修改。

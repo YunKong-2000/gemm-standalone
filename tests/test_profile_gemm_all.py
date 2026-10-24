@@ -55,13 +55,13 @@ class TestNcuProfile(unittest.TestCase):
 
     def test_profile_range_selects_exact_implementation_without_launch_count(self):
         with mock.patch.object(profile, "run_logged", self.fake_run):
-            result, rows = profile.profile_one("ncu", Path("gemm_profile"), "split_k", (128, 256, 48), self.root,
+            result, rows = profile.profile_one("ncu", Path("gemm_profile"), "split_k", (128, 256, 96), self.root,
                 warmup=3, device=1, seed=2, section_set="full", cache_control="all", clock_control="base")
         self.assertEqual(result["status"], "ok")
         command = self.commands[0]
         self.assertEqual(command[command.index("--profile-from-start") + 1], "off")
         self.assertEqual(command[command.index("--impl") + 1], "split_k")
-        self.assertEqual(command[command.index("--shape") + 1], "128,256,48")
+        self.assertEqual(command[command.index("--shape") + 1], "128,256,96")
         self.assertNotIn("--launch-count", command)  # cuBLAS may launch multiple device kernels.
         self.assertNotIn("--kernel-name", command)   # several translation units use gemm_kernel.
         self.assertEqual(rows[0]["implementation"], "split_k")
@@ -76,7 +76,7 @@ class TestNcuProfile(unittest.TestCase):
         with mock.patch.object(profile.shutil, "which", return_value="ncu"), \
              mock.patch.object(profile, "run_logged", self.fake_run):
             status = profile.main(["--skip-build", "--build-dir", str(build), "--output", str(output),
-                                   "--shapes", "128,256,48"])
+                                   "--shapes", "128,256,96"])
         self.assertEqual(status, 1)
         manifest = json.loads((output / "manifest.json").read_text())
         self.assertEqual([r["impl"] for r in manifest["profiles"]], ["prefetch_smem", "split_k", "cublas"])
@@ -119,14 +119,14 @@ class TestNcuProfile(unittest.TestCase):
                  mock.patch.object(profile, "run_logged", self.fake_run):
                 for _ in range(2):
                     self.assertEqual(profile.main(["--skip-build", "--build-dir", str(build),
-                                                   "--impls", "cublas", "--shapes", "128,256,48"]), 0)
+                                                   "--impls", "cublas", "--shapes", "128,256,96"]), 0)
         finally:
             os.umask(original_umask)
         directories = list((self.root / "results").glob("ncu_*"))
         self.assertEqual(len(directories), 2)
         for directory in directories:
             self.assertEqual(directory.stat().st_mode & 0o777, 0o755)
-            self.assertTrue((directory / "cublas__128x256x48.ncu-rep").is_file())
+            self.assertTrue((directory / "cublas__128x256x96.ncu-rep").is_file())
             self.assertTrue((directory / "metrics_all.csv").is_file())
 
     def test_metrics_banners_are_ignored_but_empty_exports_fail(self):
@@ -206,7 +206,7 @@ class TestNcuProfile(unittest.TestCase):
             self.assertEqual({r["implementation"] for r in csv.DictReader(handle)}, {"warp_tile"})
 
     def test_shape_validation(self):
-        self.assertEqual(profile.parse_shape("128x256x48"), (128, 256, 48))
+        self.assertEqual(profile.parse_shape("128x256x96"), (128, 256, 96))
         for shape in ("127,128,16", "128,128,8", "0,128,16", "1,2", "x,y,z", "1048576,128,16"):
             with self.subTest(shape=shape), self.assertRaises(argparse.ArgumentTypeError):
                 profile.parse_shape(shape)

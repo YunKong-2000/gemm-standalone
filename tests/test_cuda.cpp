@@ -4,7 +4,9 @@
 void check_split_k_register_pipeline(const Kernel& kernel, cudaStream_t stream, cublasHandle_t handle) {
   // Distinct contributions for every K row expose missing register-prefetch
   // rows and duplicated prologue/drain work across both Split-K slices.
-  for (int k : {16, 32, 48, 64, 80}) {
+  // The registry stores the full-K multiple (SPLIT_K * device BK).
+  for (int tiles : {1, 2, 3, 4, 5}) {
+    const int k = kernel.BK * tiles;
     const Shape s{128, 256, k};
     std::vector<float> a(s.M * s.K), b(s.K * s.N), output(s.M * s.N);
     for (int kk = 0; kk < k; ++kk) {
